@@ -20,6 +20,7 @@ export default class CybermythExtension extends Extension {
     enable() {
         this._settings = this.getSettings();
         this._effects = new Set();
+        this._actorConns = new Map();
         this._maskContent = null;
         this._maskName = null;
         this._tickId = null;
@@ -64,6 +65,11 @@ export default class CybermythExtension extends Extension {
             Background.BackgroundManager.prototype._createBackgroundActor = this._origCreate;
             this._origCreate = null;
         }
+
+        for (const [actor, id] of this._actorConns)
+            actor.disconnect(id);
+        this._actorConns.clear();
+        this._actorConns = null;
 
         for (const effect of this._effects)
             effect.get_actor()?.remove_effect_by_name(EFFECT_NAME);
@@ -138,7 +144,11 @@ export default class CybermythExtension extends Extension {
         actor.add_effect_with_name(EFFECT_NAME, effect);
         this._effects.add(effect);
 
-        actor.connect('destroy', () => this._effects.delete(effect));
+        const id = actor.connect('destroy', () => {
+            this._effects.delete(effect);
+            this._actorConns.delete(actor);
+        });
+        this._actorConns.set(actor, id);
     }
 
     _startTick() {
