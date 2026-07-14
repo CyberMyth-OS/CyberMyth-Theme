@@ -1,0 +1,10 @@
+{
+  "uuid": "cybermyth-theme@cybermyth.dev",
+  "name": "Cybermyth Theme",
+  "description": "A rotating 3D globe rendered directly onto your desktop background. Pick a solid overlay or let the globe float over your wallpaper. Designed to grow into a full desktop theme.",
+  "shell-version": ["48"],
+  "session-modes": ["user"],
+  "settings-schema": "org.gnome.shell.extensions.cybermyth-theme",
+  "url": "https://github.com/CyberMyth-OS/CyberMyth-Theme",
+  "version-name": "1.0.0"
+}

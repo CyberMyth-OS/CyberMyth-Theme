@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <enum id="org.gnome.shell.extensions.cybermyth-theme.theme">
+    <value nick="globe" value="0"/>
+  </enum>
+
+  <schema id="org.gnome.shell.extensions.cybermyth-theme"
+          path="/org/gnome/shell/extensions/cybermyth-theme/">
+
+    <key name="active-theme" enum="org.gnome.shell.extensions.cybermyth-theme.theme">
+      <default>"globe"</default>
+      <summary>Active theme</summary>
+      <description>The visual theme rendered onto the desktop background.</description>
+    </key>
+
+    <key name="background-color" type="s">
+      <default>"#05060a"</default>
+      <summary>Background colour</summary>
+      <description>Colour of the sphere and the overlay drawn behind it.</description>
+    </key>
+
+    <key name="background-opacity" type="d">
+      <default>1.0</default>
+      <range min="0.0" max="1.0"/>
+      <summary>Background opacity</summary>
+      <description>Opacity of the background colour around the globe. 1.0 is solid; 0.0 shows the wallpaper behind it.</description>
+    </key>
+
+    <key name="globe-opacity" type="d">
+      <default>1.0</default>
+      <range min="0.0" max="1.0"/>
+      <summary>Globe opacity</summary>
+      <description>Opacity of the sphere itself. 1.0 is solid; 0.0 makes the globe see-through to the wallpaper.</description>
+    </key>
+
+    <key name="rotation-speed" type="d">
+      <default>1.0</default>
+      <range min="0.0" max="5.0"/>
+      <summary>Rotation speed</summary>
+      <description>Multiplier applied to the globe's base rotation speed.</description>
+    </key>
+
+    <key name="fps" type="i">
+      <default>30</default>
+      <range min="15" max="60"/>
+      <summary>Frame rate</summary>
+      <description>Maximum redraws per second. Lower values save power.</description>
+    </key>
+
+  </schema>
+</schemalist>
