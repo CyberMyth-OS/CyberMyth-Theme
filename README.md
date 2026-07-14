@@ -47,16 +47,6 @@ dbus-run-session -- gnome-shell --nested --wayland
 gnome-extensions enable cybermyth-theme@cybermyth.dev
 ```
 
-## Building a release
-
-```sh
-gnome-extensions pack cybermyth-theme@cybermyth.dev \
-  --extra-source=lib --extra-source=assets --extra-source=LICENSE --force
-```
-
-This produces `cybermyth-theme@cybermyth.dev.shell-extension.zip`, ready to
-upload at <https://extensions.gnome.org/upload/>.
-
 ## License
 
 Copyright © 2026 Toshith Yadav.
