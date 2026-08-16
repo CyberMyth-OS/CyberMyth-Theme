@@ -13,6 +13,12 @@
       <description>The visual theme rendered onto the desktop background.</description>
     </key>
 
+    <key name="globe-enabled" type="b">
+      <default>true</default>
+      <summary>Render the globe</summary>
+      <description>Draw the globe onto the desktop background. Turning this off stops all background redrawing, which saves power; the transparent top bar and the translucent menus carry on working.</description>
+    </key>
+
     <key name="background-color" type="s">
       <default>"#05060a"</default>
       <summary>Background colour</summary>
@@ -20,17 +26,37 @@
     </key>
 
     <key name="background-opacity" type="d">
-      <default>1.0</default>
+      <default>0.0</default>
       <range min="0.0" max="1.0"/>
       <summary>Background opacity</summary>
-      <description>Opacity of the background colour around the globe. 1.0 is solid; 0.0 shows the wallpaper behind it.</description>
+      <description>Opacity of the background colour around the globe. 1.0 covers the desktop completely; 0.0, the default, leaves your wallpaper showing and lets the globe float over it.</description>
     </key>
 
     <key name="globe-opacity" type="d">
-      <default>1.0</default>
+      <default>0.9</default>
       <range min="0.0" max="1.0"/>
       <summary>Globe opacity</summary>
       <description>Opacity of the sphere itself. 1.0 is solid; 0.0 makes the globe see-through to the wallpaper.</description>
+    </key>
+
+    <key name="panel-opacity" type="d">
+      <default>0.0</default>
+      <range min="0.0" max="1.0"/>
+      <summary>Top bar opacity</summary>
+      <description>Opacity of the top bar background while the desktop is visible. 0.0 is fully transparent; 1.0 fills it with the background colour. The top bar is left to the shell's own theme in the overview and behind a maximized window.</description>
+    </key>
+
+    <key name="menu-blur" type="b">
+      <default>false</default>
+      <summary>Blur behind menus</summary>
+      <description>Blur what shows through the system menus. This relies on Shell.BlurEffect in background mode, which GNOME Shell itself never uses and which does nothing on some drivers, so it is off by default. Turn it on and check that your menus look right before relying on it.</description>
+    </key>
+
+    <key name="menu-blur-radius" type="i">
+      <default>48</default>
+      <range min="8" max="120"/>
+      <summary>Menu blur radius</summary>
+      <description>How far the blur behind a menu reaches, in pixels. Only has any effect while blur behind menus is turned on.</description>
     </key>
 
     <key name="rotation-speed" type="d">

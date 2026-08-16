@@ -1,0 +1,30 @@
+/* SPDX-FileCopyrightText: 2026 Toshith Yadav */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
+
+/* Fallback variant, used when Main.getStyleVariant() returns no variant at
+ * all — it can return an empty string, and then neither stylesheet-dark.css
+ * nor stylesheet-light.css matches. GNOME Shell loads exactly ONE extension
+ * stylesheet, so this file has to carry every rule on its own. It follows
+ * the dark values, since that is what the globe is drawn for. */
+
+/* extension.js puts this class on #panel only while the desktop is actually
+ * on show, and takes it back off in the overview and behind a maximized
+ * window, where the shell's own theme should keep control of the top bar.
+ *
+ * The tint itself is set inline, because its alpha comes from a setting.
+ * What lives here is the part a shell theme would otherwise leave stranded
+ * over a see-through bar: a bottom border or a drop shadow with no filled
+ * panel left underneath it. */
+#panel.cybermyth-transparent-panel {
+    background-color: transparent;
+    background-image: none;
+    border: none;
+    box-shadow: none;
+}
+
+/* Menus. See stylesheet-dark.css for why the hairline border is here. */
+.popup-menu-content,
+.candidate-popup-content {
+    background-color: rgba(30, 30, 34, 0.72);
+    border: 1px solid rgba(255, 255, 255, 0.13);
+}

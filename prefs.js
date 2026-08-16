@@ -21,6 +21,14 @@ export default class CybermythPrefs extends ExtensionPreferences {
         const appearance = new Adw.PreferencesGroup({title: 'Appearance'});
         page.add(appearance);
 
+        const globeRow = new Adw.SwitchRow({
+            title: 'Render the globe',
+            subtitle: 'Turn off to stop redrawing the background and save power. ' +
+                'The top bar and menus stay styled',
+        });
+        settings.bind('globe-enabled', globeRow, 'active', Gio.SettingsBindFlags.DEFAULT);
+        appearance.add(globeRow);
+
         const themeModel = new Gtk.StringList();
         themeModel.append('Globe');
         const themeRow = new Adw.ComboRow({
@@ -41,7 +49,7 @@ export default class CybermythPrefs extends ExtensionPreferences {
 
         const colorRow = new Adw.ActionRow({
             title: 'Background colour',
-            subtitle: 'Colour of the sphere and the surround',
+            subtitle: 'Colour of the sphere, the surround, and the top bar tint',
         });
         const colorButton = new Gtk.ColorDialogButton({
             dialog: new Gtk.ColorDialog({with_alpha: false}),
@@ -62,13 +70,62 @@ export default class CybermythPrefs extends ExtensionPreferences {
         colorRow.activatable_widget = colorButton;
         bgGroup.add(colorRow);
 
-        bgGroup.add(this._sliderRow(settings, 'background-opacity',
-            'Background opacity', '0 shows your wallpaper around the globe'));
-        bgGroup.add(this._sliderRow(settings, 'globe-opacity',
-            'Globe opacity', '0 makes the sphere itself see-through'));
+        const bgOpacityRow = this._sliderRow(settings, 'background-opacity',
+            'Background opacity', '0 shows your wallpaper around the globe');
+        const globeOpacityRow = this._sliderRow(settings, 'globe-opacity',
+            'Globe opacity', '0 makes the sphere itself see-through');
+        bgGroup.add(bgOpacityRow);
+        bgGroup.add(globeOpacityRow);
+
+        // Everything here only matters while the globe is actually drawn. The
+        // colour is the exception: it also tints the top bar.
+        for (const row of [themeRow, bgOpacityRow, globeOpacityRow])
+            settings.bind('globe-enabled', row, 'sensitive', Gio.SettingsBindFlags.GET);
+
+        const panelGroup = new Adw.PreferencesGroup({
+            title: 'Top bar',
+            description: 'In the overview, and behind a maximized window, the top ' +
+                'bar goes back to your shell theme',
+        });
+        page.add(panelGroup);
+
+        panelGroup.add(this._sliderRow(settings, 'panel-opacity',
+            'Top bar opacity', '0 makes it fully see-through; 1 fills it with the background colour'));
+
+        const menus = new Adw.PreferencesGroup({
+            title: 'Menus',
+            description: 'System menus are translucent whenever the extension is on. ' +
+                'Blur is a separate, experimental extra',
+        });
+        page.add(menus);
+
+        const blurRow = new Adw.SwitchRow({
+            title: 'Blur behind menus',
+            subtitle: 'Experimental — does nothing on some graphics drivers. ' +
+                'Check your menus after turning it on',
+        });
+        settings.bind('menu-blur', blurRow, 'active', Gio.SettingsBindFlags.DEFAULT);
+        menus.add(blurRow);
+
+        const radiusRow = new Adw.SpinRow({
+            title: 'Blur radius',
+            subtitle: 'How far the blur reaches, in pixels',
+            adjustment: new Gtk.Adjustment({
+                lower: 8, upper: 120, step_increment: 4, page_increment: 16,
+            }),
+        });
+        radiusRow.value = settings.get_int('menu-blur-radius');
+        radiusRow.connect('notify::value', () => {
+            const v = Math.round(radiusRow.value);
+            if (v !== settings.get_int('menu-blur-radius'))
+                settings.set_int('menu-blur-radius', v);
+        });
+        settings.bind('menu-blur', radiusRow, 'sensitive', Gio.SettingsBindFlags.GET);
+        menus.add(radiusRow);
 
         const motion = new Adw.PreferencesGroup({title: 'Motion'});
         page.add(motion);
+        settings.bind('globe-enabled', motion, 'sensitive', Gio.SettingsBindFlags.GET);
 
         const speedRow = new Adw.SpinRow({
             title: 'Rotation speed',
