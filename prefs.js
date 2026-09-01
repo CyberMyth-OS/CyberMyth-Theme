@@ -82,47 +82,6 @@ export default class CybermythPrefs extends ExtensionPreferences {
         for (const row of [themeRow, bgOpacityRow, globeOpacityRow])
             settings.bind('globe-enabled', row, 'sensitive', Gio.SettingsBindFlags.GET);
 
-        const panelGroup = new Adw.PreferencesGroup({
-            title: 'Top bar',
-            description: 'In the overview, and behind a maximized window, the top ' +
-                'bar goes back to your shell theme',
-        });
-        page.add(panelGroup);
-
-        panelGroup.add(this._sliderRow(settings, 'panel-opacity',
-            'Top bar opacity', '0 makes it fully see-through; 1 fills it with the background colour'));
-
-        const menus = new Adw.PreferencesGroup({
-            title: 'Menus',
-            description: 'System menus are translucent whenever the extension is on. ' +
-                'Blur is a separate, experimental extra',
-        });
-        page.add(menus);
-
-        const blurRow = new Adw.SwitchRow({
-            title: 'Blur behind menus',
-            subtitle: 'Experimental — does nothing on some graphics drivers. ' +
-                'Check your menus after turning it on',
-        });
-        settings.bind('menu-blur', blurRow, 'active', Gio.SettingsBindFlags.DEFAULT);
-        menus.add(blurRow);
-
-        const radiusRow = new Adw.SpinRow({
-            title: 'Blur radius',
-            subtitle: 'How far the blur reaches, in pixels',
-            adjustment: new Gtk.Adjustment({
-                lower: 8, upper: 120, step_increment: 4, page_increment: 16,
-            }),
-        });
-        radiusRow.value = settings.get_int('menu-blur-radius');
-        radiusRow.connect('notify::value', () => {
-            const v = Math.round(radiusRow.value);
-            if (v !== settings.get_int('menu-blur-radius'))
-                settings.set_int('menu-blur-radius', v);
-        });
-        settings.bind('menu-blur', radiusRow, 'sensitive', Gio.SettingsBindFlags.GET);
-        menus.add(radiusRow);
-
         const motion = new Adw.PreferencesGroup({title: 'Motion'});
         page.add(motion);
         settings.bind('globe-enabled', motion, 'sensitive', Gio.SettingsBindFlags.GET);
@@ -152,6 +111,98 @@ export default class CybermythPrefs extends ExtensionPreferences {
                 settings.set_int('fps', v);
         });
         motion.add(fpsRow);
+
+        const panelGroup = new Adw.PreferencesGroup({
+            title: 'Top bar',
+            description: 'In the overview, and behind a maximized window, the top ' +
+                'bar goes back to your shell theme',
+        });
+        page.add(panelGroup);
+
+        panelGroup.add(this._sliderRow(settings, 'panel-opacity',
+            'Top bar opacity', '0 makes it fully see-through; 1 fills it with the background colour'));
+
+        const menus = new Adw.PreferencesGroup({
+            title: 'Menus',
+            description: 'Applies to system menus, the app grid and the overview',
+        });
+        page.add(menus);
+
+        const blurRow = new Adw.SwitchRow({
+            title: 'Blur behind menus',
+            subtitle: 'Blurs whatever is underneath, windows included',
+        });
+        settings.bind('menu-blur', blurRow, 'active', Gio.SettingsBindFlags.DEFAULT);
+        menus.add(blurRow);
+
+        const menuColorRow = new Adw.ActionRow({
+            title: 'Menu colour',
+            subtitle: 'Laid over the blur in menus, the app grid and the overview',
+        });
+        const menuColorButton = new Gtk.ColorDialogButton({
+            dialog: new Gtk.ColorDialog({with_alpha: false}),
+            valign: Gtk.Align.CENTER,
+        });
+        const menuRgba = new Gdk.RGBA();
+        menuRgba.parse(settings.get_string('menu-color'));
+        menuColorButton.set_rgba(menuRgba);
+        menuColorButton.connect('notify::rgba', () => {
+            const c = menuColorButton.get_rgba();
+            const hex = '#' + [c.red, c.green, c.blue]
+                .map(v => Math.round(v * 255).toString(16).padStart(2, '0'))
+                .join('');
+            if (hex !== settings.get_string('menu-color'))
+                settings.set_string('menu-color', hex);
+        });
+        menuColorRow.add_suffix(menuColorButton);
+        menuColorRow.activatable_widget = menuColorButton;
+        menus.add(menuColorRow);
+
+        menus.add(this._sliderRow(settings, 'menu-opacity',
+            'Menu opacity', '0 leaves only the blur; 1 hides the blur completely'));
+
+        const hoverRow = new Adw.ActionRow({
+            title: 'Icon highlight colour',
+            subtitle: 'Behind app grid, search and folder icons when hovered',
+        });
+        const hoverButton = new Gtk.ColorDialogButton({
+            dialog: new Gtk.ColorDialog({with_alpha: false}),
+            valign: Gtk.Align.CENTER,
+        });
+        const hoverRgba = new Gdk.RGBA();
+        hoverRgba.parse(settings.get_string('hover-color'));
+        hoverButton.set_rgba(hoverRgba);
+        hoverButton.connect('notify::rgba', () => {
+            const c = hoverButton.get_rgba();
+            const hex = '#' + [c.red, c.green, c.blue]
+                .map(v => Math.round(v * 255).toString(16).padStart(2, '0'))
+                .join('');
+            if (hex !== settings.get_string('hover-color'))
+                settings.set_string('hover-color', hex);
+        });
+        hoverRow.add_suffix(hoverButton);
+        hoverRow.activatable_widget = hoverButton;
+        menus.add(hoverRow);
+
+        menus.add(this._sliderRow(settings, 'hover-opacity',
+            'Icon highlight opacity', 'How solid that highlight is'));
+
+        const radiusRow = new Adw.SpinRow({
+            title: 'Blur radius',
+            subtitle: 'How far the blur reaches, in pixels',
+            adjustment: new Gtk.Adjustment({
+                lower: 2, upper: 120, step_increment: 2, page_increment: 8,
+            }),
+        });
+        radiusRow.value = settings.get_int('menu-blur-radius');
+        radiusRow.connect('notify::value', () => {
+            const v = Math.round(radiusRow.value);
+            if (v !== settings.get_int('menu-blur-radius'))
+                settings.set_int('menu-blur-radius', v);
+        });
+        settings.bind('menu-blur', radiusRow, 'sensitive', Gio.SettingsBindFlags.GET);
+        menus.add(radiusRow);
+
     }
 
     _sliderRow(settings, key, title, subtitle) {

@@ -26,6 +26,31 @@
  * surface muddy and drops the contrast under the labels. */
 .popup-menu-content,
 .candidate-popup-content {
-    background-color: rgba(250, 250, 251, 0.76);
+    background-color: rgba(10, 10, 10, 0.30);
     border: 1px solid rgba(0, 0, 0, 0.09);
+    /* Stock draws box-shadow: 0 2px 4px rgba(0,0,0,0.2) here. A shadow is
+     * painted behind the element, which is invisible under an opaque menu but
+     * shows straight through a translucent one — as light patches where the
+     * rounded corners cut away the background above it. Drop it. */
+    box-shadow: none;
 }
+
+/* The overview and the app grid both sit on #overviewGroup, which the stock
+ * theme fills with a flat grey. That grey is what shows behind the app grid
+ * and it is what bleeds out from under rounded corners. Clear it and let the
+ * blurred wallpaper the extension parks underneath show through instead. */
+#overviewGroup {
+    background-color: transparent;
+}
+
+/* App folder popups. The colour is replaced inline from the menu-colour
+ * setting; this is the fallback and the part that keeps the edge defined. */
+.app-folder-dialog {
+    background-color: rgba(10, 10, 10, 0.30);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    /* Stock's light inset ring (box-shadow: inset 0 0 0 1px rgba(250,250,251,.1))
+     * shows through a translucent dialog the same way the menu shadow did. The
+     * border above already does that job. */
+    box-shadow: none;
+}
+

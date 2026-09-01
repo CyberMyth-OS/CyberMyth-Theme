@@ -5,7 +5,6 @@ import Cogl from 'gi://Cogl';
 import GdkPixbuf from 'gi://GdkPixbuf';
 import GLib from 'gi://GLib';
 import Meta from 'gi://Meta';
-import Shell from 'gi://Shell';
 import St from 'gi://St';
 
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
@@ -13,6 +12,8 @@ import * as Background from 'resource:///org/gnome/shell/ui/background.js';
 import * as BoxPointer from 'resource:///org/gnome/shell/ui/boxpointer.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
+import {BlurManager, OverviewBackdrop, loadRoundedBlur, shouldSkipGlobe} from './lib/blur.js';
+import {DynamicStylesheet, rgba} from './lib/dynamicStyle.js';
 import {GlobeEffect, EFFECT_NAME} from './lib/globeEffect.js';
 import {THEMES, THEME_ORDER} from './lib/themes.js';
 
@@ -21,11 +22,12 @@ const REFERENCE_FPS = 30;
 // has to notice windows being maximized. Poll slowly enough to cost nothing.
 const IDLE_POLL_FPS = 5;
 const PANEL_STYLE_CLASS = 'cybermyth-transparent-panel';
-const BLUR_EFFECT_NAME = 'cybermyth-menu-blur';
 const BLUR_BRIGHTNESS = 1.0;
+// How far to look inside a uiGroup child for a nested BoxPointer.
+const BLUR_SEARCH_DEPTH = 3;
 
 export default class CybermythExtension extends Extension {
-    enable() {
+    async enable() {
         this._settings = this.getSettings();
         this._effects = new Set();
         this._actorConns = new Map();
@@ -35,11 +37,12 @@ export default class CybermythExtension extends Extension {
         this._speed = 1.0;
         this._panelStyle = null;
         this._panelApplied = null;
-        this._blurred = new Set();
-        this._blurConns = new Map();
+        this._blur = new BlurManager();
         this._blurRadius = 48;
         this._uiGroupConn = null;
         this._globeOn = false;
+        this._overviewBackdrop = null;
+        this._style = new DynamicStylesheet(this.uuid);
 
         this._config = {
             phi: 0.0,
@@ -58,6 +61,10 @@ export default class CybermythExtension extends Extension {
             'changed::globe-opacity',
             'changed::menu-blur',
             'changed::menu-blur-radius',
+            'changed::menu-color',
+            'changed::menu-opacity',
+            'changed::hover-color',
+            'changed::hover-opacity',
             'changed::panel-opacity',
             'changed::rotation-speed',
             'changed::fps',
@@ -67,10 +74,14 @@ export default class CybermythExtension extends Extension {
         this._origCreate = Background.BackgroundManager.prototype._createBackgroundActor;
         Background.BackgroundManager.prototype._createBackgroundActor = function () {
             const actor = self._origCreate.call(this);
-            if (self._globeOn)
+            if (self._globeOn && !shouldSkipGlobe(this._container))
                 self._attach(actor);
             return actor;
         };
+
+        // Resolve the optional rounded-blur library before anything is drawn.
+        // The shell awaits enable(), so this costs one import and nothing else.
+        await loadRoundedBlur();
 
         this._applySettings();
     }
@@ -79,8 +90,9 @@ export default class CybermythExtension extends Extension {
         this._stopTick();
         this._resetPanel();
         this._clearMenuBlur();
-        this._blurred = null;
-        this._blurConns = null;
+        this._blur = null;
+        this._style.destroy();
+        this._style = null;
 
         if (this._origCreate) {
             Background.BackgroundManager.prototype._createBackgroundActor = this._origCreate;
@@ -123,6 +135,8 @@ export default class CybermythExtension extends Extension {
         this._panelStyle = `background-color: rgba(${r}, ${g}, ${b}, ${alpha.toFixed(2)});`;
         this._blurRadius = this._settings.get_int('menu-blur-radius');
 
+        this._updateStyle();
+
         if (this._maskName !== theme.mask) {
             this._maskContent = this._loadMask(theme.mask);
             this._maskName = theme.mask;
@@ -134,6 +148,7 @@ export default class CybermythExtension extends Extension {
         this._startTick();
         this._updatePanel();
         this._applyMenuBlur();
+        this._applyOverviewBackdrop();
     }
 
     // Switching the globe off drops the effects and lets the shell paint the
@@ -273,40 +288,123 @@ export default class CybermythExtension extends Extension {
             return;
         }
 
-        this._uiGroupConn ??= Main.uiGroup.connect('child-added',
-            (_group, child) => this._blurMenu(child));
-
-        for (const child of Main.uiGroup.get_children())
-            this._blurMenu(child);
-
-        for (const actor of this._blurred) {
-            actor.get_effect(BLUR_EFFECT_NAME)?.set({
-                radius: this._blurRadius,
-                brightness: BLUR_BRIGHTNESS,
-            });
-        }
-    }
-
-    _blurMenu(actor) {
-        if (!(actor instanceof BoxPointer.BoxPointer) ||
-            actor.get_effect(BLUR_EFFECT_NAME))
-            return;
-
-        actor.add_effect_with_name(BLUR_EFFECT_NAME, new Shell.BlurEffect({
-            name: BLUR_EFFECT_NAME,
-            mode: Shell.BlurMode.BACKGROUND,
+        this._blur.setParams({
             radius: this._blurRadius,
             brightness: BLUR_BRIGHTNESS,
-        }));
-        this._blurred.add(actor);
-
-        // Menus are built and thrown away constantly; drop ours as they go so
-        // we never hold on to a destroyed actor.
-        const id = actor.connect('destroy', () => {
-            this._blurred.delete(actor);
-            this._blurConns.delete(actor);
         });
-        this._blurConns.set(actor, id);
+
+        this._uiGroupConn ??= Main.uiGroup.connect('child-added',
+            (_group, child) => this._blurTarget(child));
+
+        for (const child of Main.uiGroup.get_children())
+            this._blurTarget(child);
+    }
+
+    // Most menus are a BoxPointer parented straight into uiGroup, but not all:
+    // QuickSettingsMenu replaces its actor with a 0x0 St.Widget and nests the
+    // real BoxPointer inside it, so blurring the uiGroup child would blur
+    // nothing. Search a little way down for the BoxPointer that actually has
+    // the menu in it.
+    _blurTarget(actor, depth = 0) {
+        if (!actor)
+            return;
+
+        if (actor instanceof BoxPointer.BoxPointer) {
+            this._blur.add(actor);
+            return;
+        }
+
+        if (depth >= BLUR_SEARCH_DEPTH)
+            return;
+
+        for (const child of actor.get_children())
+            this._blurTarget(child, depth + 1);
+    }
+
+    // Everything the user can recolour lives here. It has to be real CSS
+    // rather than inline styles: :hover and friends are pseudo-classes, and
+    // St has no way to set those on an actor directly.
+    _updateStyle() {
+        const hex = h => this._hexToRgb(h);
+        const menu = rgba(hex, this._settings.get_string('menu-color'),
+            this._settings.get_double('menu-opacity'));
+        const hover = rgba(hex, this._settings.get_string('hover-color'),
+            this._settings.get_double('hover-opacity'));
+
+        // Selectors are deliberately a notch more specific than the stock
+        // theme's, so this sheet wins the cascade wherever both set a colour.
+        this._style.update(`
+.popup-menu .popup-menu-content,
+.candidate-popup-boxpointer .candidate-popup-content,
+#overviewGroup .app-folder-dialog {
+    background-color: ${menu};
+}
+
+/* Surfaces the stock theme fills with a flat grey at rest: the folder tiles in
+ * the app grid, and the search result rows. The :focus states matter as much as
+ * :hover here — the shell focuses the first search result automatically, and
+ * the stock theme paints that one with an accent-tinted background. */
+#overviewGroup .app-folder,
+#overviewGroup .search-section-content,
+#overviewGroup .list-search-result,
+#overviewGroup .search-provider-icon,
+#overviewGroup .app-folder:hover,
+#overviewGroup .app-folder:active,
+#overviewGroup .app-folder:focus,
+#overviewGroup .app-folder:checked,
+#overviewGroup .app-folder:selected,
+#overviewGroup .app-folder:highlighted,
+#overviewGroup .overview-tile:hover,
+#overviewGroup .overview-tile:active,
+#overviewGroup .overview-tile:focus,
+#overviewGroup .overview-tile:checked,
+#overviewGroup .overview-tile:selected,
+#overviewGroup .overview-tile:highlighted,
+#overviewGroup .overview-tile:focus:hover,
+#overviewGroup .overview-tile:active:hover,
+#overviewGroup .overview-tile:active:focus,
+#overviewGroup .grid-search-result:hover,
+#overviewGroup .grid-search-result:active,
+#overviewGroup .grid-search-result:focus,
+#overviewGroup .grid-search-result:checked,
+#overviewGroup .grid-search-result:selected,
+#overviewGroup .grid-search-result:focus:hover,
+#overviewGroup .grid-search-result:active:hover,
+#overviewGroup .grid-search-result:active:focus,
+#overviewGroup .app-folder-dialog .overview-tile:hover,
+#overviewGroup .app-folder-dialog .overview-tile:active,
+#overviewGroup .app-folder-dialog .grid-search-result:hover,
+#overviewGroup .app-folder-dialog .grid-search-result:active,
+#overviewGroup .list-search-result:hover,
+#overviewGroup .list-search-result:active,
+#overviewGroup .list-search-result:focus,
+#overviewGroup .list-search-result:focus:hover,
+#overviewGroup .list-search-result:active:focus,
+#overviewGroup .list-search-result:selected,
+#overviewGroup .search-provider-icon:hover,
+#overviewGroup .search-provider-icon:active,
+#overviewGroup .search-provider-icon:focus,
+#overviewGroup .search-provider-icon:focus:hover,
+#overviewGroup .search-provider-icon:active:focus,
+#overviewGroup .app-folder-dialog .overview-tile:focus,
+#overviewGroup .app-folder-dialog .grid-search-result:focus {
+    background-color: ${hover};
+}
+`);
+    }
+
+    _applyOverviewBackdrop() {
+        if (!this._settings.get_boolean('menu-blur')) {
+            this._overviewBackdrop?.destroy();
+            this._overviewBackdrop = null;
+            return;
+        }
+
+        if (this._overviewBackdrop) {
+            this._overviewBackdrop.setParams(this._blurRadius, BLUR_BRIGHTNESS);
+            return;
+        }
+        this._overviewBackdrop = new OverviewBackdrop(this._blurRadius, BLUR_BRIGHTNESS);
     }
 
     _clearMenuBlur() {
@@ -314,14 +412,9 @@ export default class CybermythExtension extends Extension {
             Main.uiGroup.disconnect(this._uiGroupConn);
             this._uiGroupConn = null;
         }
-
-        for (const [actor, id] of this._blurConns)
-            actor.disconnect(id);
-        this._blurConns.clear();
-
-        for (const actor of this._blurred)
-            actor.remove_effect_by_name(BLUR_EFFECT_NAME);
-        this._blurred.clear();
+        this._blur.removeAll();
+        this._overviewBackdrop?.destroy();
+        this._overviewBackdrop = null;
     }
 
     _occluded() {
@@ -340,6 +433,7 @@ export default class CybermythExtension extends Extension {
 
     _tick() {
         this._updatePanel();
+        this._blur?.syncAll();
 
         if (!this._globeOn || this._occluded())
             return GLib.SOURCE_CONTINUE;

@@ -47,16 +47,42 @@
     </key>
 
     <key name="menu-blur" type="b">
-      <default>false</default>
+      <default>true</default>
       <summary>Blur behind menus</summary>
-      <description>Blur what shows through the system menus. This relies on Shell.BlurEffect in background mode, which GNOME Shell itself never uses and which does nothing on some drivers, so it is off by default. Turn it on and check that your menus look right before relying on it.</description>
+      <description>Blur whatever is underneath the system menus, windows included. Renders nothing on drivers that cannot do background blur, in which case menus are simply translucent.</description>
     </key>
 
     <key name="menu-blur-radius" type="i">
-      <default>48</default>
-      <range min="8" max="120"/>
+      <default>28</default>
+      <range min="2" max="120"/>
       <summary>Menu blur radius</summary>
       <description>How far the blur behind a menu reaches, in pixels. Only has any effect while blur behind menus is turned on.</description>
+    </key>
+
+    <key name="menu-color" type="s">
+      <default>"#0a0a0a"</default>
+      <summary>Menu colour</summary>
+      <description>Colour laid over the blur in system menus, the app grid and the overview.</description>
+    </key>
+
+    <key name="menu-opacity" type="d">
+      <default>0.45</default>
+      <range min="0.0" max="1.0"/>
+      <summary>Menu opacity</summary>
+      <description>How solid the menu colour is. 0.0 leaves only the blur showing; 1.0 hides the blur completely. Applies to menus only, never to the wallpaper behind the overview.</description>
+    </key>
+
+    <key name="hover-color" type="s">
+      <default>"#000000"</default>
+      <summary>Icon highlight colour</summary>
+      <description>Colour drawn behind app folders, search results and app grid icons, both at rest and while hovered or pressed.</description>
+    </key>
+
+    <key name="hover-opacity" type="d">
+      <default>0.5</default>
+      <range min="0.0" max="1.0"/>
+      <summary>Icon highlight opacity</summary>
+      <description>How solid that highlight is. 0.0 hides it entirely; 1.0 makes it opaque.</description>
     </key>
 
     <key name="rotation-speed" type="d">
