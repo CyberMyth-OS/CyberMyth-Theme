@@ -130,7 +130,8 @@ export default class CybermythPrefs extends ExtensionPreferences {
 
         const blurRow = new Adw.SwitchRow({
             title: 'Blur behind menus',
-            subtitle: 'Blurs whatever is underneath, windows included',
+            subtitle: 'Blurs whatever is underneath, windows included. The ' +
+                'overview keeps its blurred wallpaper either way',
         });
         settings.bind('menu-blur', blurRow, 'active', Gio.SettingsBindFlags.DEFAULT);
         menus.add(blurRow);
@@ -189,7 +190,8 @@ export default class CybermythPrefs extends ExtensionPreferences {
 
         const radiusRow = new Adw.SpinRow({
             title: 'Blur radius',
-            subtitle: 'How far the blur reaches, in pixels',
+            subtitle: 'How far the blur reaches, in pixels. Also sets the ' +
+                'blur behind the overview',
             adjustment: new Gtk.Adjustment({
                 lower: 2, upper: 120, step_increment: 2, page_increment: 8,
             }),
@@ -200,9 +202,73 @@ export default class CybermythPrefs extends ExtensionPreferences {
             if (v !== settings.get_int('menu-blur-radius'))
                 settings.set_int('menu-blur-radius', v);
         });
-        settings.bind('menu-blur', radiusRow, 'sensitive', Gio.SettingsBindFlags.GET);
+        // Not tied to the menu-blur switch: the radius still drives the
+        // blurred wallpaper behind the overview, which stays either way.
         menus.add(radiusRow);
 
+        const dock = new Adw.PreferencesGroup({
+            title: 'Dock',
+            description: 'A dock on the desktop, styled with the menu colour ' +
+                'and opacity above',
+        });
+        page.add(dock);
+
+        const dockRow = new Adw.SwitchRow({
+            title: 'Show the dock',
+            subtitle: 'Replaces the need for a separate dock extension',
+        });
+        settings.bind('dock-enabled', dockRow, 'active', Gio.SettingsBindFlags.DEFAULT);
+        dock.add(dockRow);
+
+        const portraitRow = new Adw.SwitchRow({
+            title: 'Auto-hide on portrait monitors',
+            subtitle: 'Slide the dock away when a window would sit under it',
+        });
+        settings.bind('dock-autohide-portrait', portraitRow, 'active',
+            Gio.SettingsBindFlags.DEFAULT);
+        settings.bind('dock-enabled', portraitRow, 'sensitive', Gio.SettingsBindFlags.GET);
+        dock.add(portraitRow);
+
+        const landscapeRow = new Adw.SwitchRow({
+            title: 'Auto-hide on landscape monitors',
+            subtitle: 'Slide the dock away when a window would sit under it',
+        });
+        settings.bind('dock-autohide-landscape', landscapeRow, 'active',
+            Gio.SettingsBindFlags.DEFAULT);
+        settings.bind('dock-enabled', landscapeRow, 'sensitive', Gio.SettingsBindFlags.GET);
+        dock.add(landscapeRow);
+
+        const iconSizeRow = new Adw.SpinRow({
+            title: 'Dock icon size',
+            subtitle: 'Height of the app icons, in pixels',
+            adjustment: new Gtk.Adjustment({
+                lower: 24, upper: 68, step_increment: 2, page_increment: 8,
+            }),
+        });
+        iconSizeRow.value = settings.get_int('dock-icon-size');
+        iconSizeRow.connect('notify::value', () => {
+            const v = Math.round(iconSizeRow.value);
+            if (v !== settings.get_int('dock-icon-size'))
+                settings.set_int('dock-icon-size', v);
+        });
+        settings.bind('dock-enabled', iconSizeRow, 'sensitive', Gio.SettingsBindFlags.GET);
+        dock.add(iconSizeRow);
+
+        const dockRadiusRow = new Adw.SpinRow({
+            title: 'Dock corner radius',
+            subtitle: 'How rounded the dock is, in pixels',
+            adjustment: new Gtk.Adjustment({
+                lower: 0, upper: 84, step_increment: 1, page_increment: 4,
+            }),
+        });
+        dockRadiusRow.value = settings.get_int('dock-radius');
+        dockRadiusRow.connect('notify::value', () => {
+            const v = Math.round(dockRadiusRow.value);
+            if (v !== settings.get_int('dock-radius'))
+                settings.set_int('dock-radius', v);
+        });
+        settings.bind('dock-enabled', dockRadiusRow, 'sensitive', Gio.SettingsBindFlags.GET);
+        dock.add(dockRadiusRow);
     }
 
     _sliderRow(settings, key, title, subtitle) {

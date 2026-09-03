@@ -1,0 +1,13 @@
+[Desktop Entry]
+Name=Trash
+GenericName=Trash
+Exec=nautilus trash:///
+Icon=user-trash
+Terminal=false
+Type=Application
+Categories=Utility;Core;
+Actions=empty-trash
+
+[Desktop Action empty-trash]
+Name=Empty Trash
+Exec=gio trash --empty

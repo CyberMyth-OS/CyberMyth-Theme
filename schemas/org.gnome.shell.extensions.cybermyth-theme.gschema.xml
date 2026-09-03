@@ -99,5 +99,37 @@
       <description>Maximum redraws per second. Lower values save power.</description>
     </key>
 
+    <key name="dock-enabled" type="b">
+      <default>true</default>
+      <summary>Show the dock</summary>
+      <description>Keep a dock on the desktop, outside the overview. It uses the same blur, tint and colour as the menus.</description>
+    </key>
+
+    <key name="dock-autohide-portrait" type="b">
+      <default>true</default>
+      <summary>Auto-hide on portrait monitors</summary>
+      <description>On a monitor that is taller than it is wide, slide the dock away when a window on the active workspace would sit underneath it. Move the pointer to the bottom edge to bring it back.</description>
+    </key>
+
+    <key name="dock-autohide-landscape" type="b">
+      <default>true</default>
+      <summary>Auto-hide on landscape monitors</summary>
+      <description>On a monitor that is wider than it is tall, slide the dock away when a window on the active workspace would sit underneath it. Move the pointer to the bottom edge to bring it back.</description>
+    </key>
+
+    <key name="dock-radius" type="i">
+      <default>64</default>
+      <range min="0" max="84"/>
+      <summary>Dock corner radius</summary>
+      <description>How rounded the dock's corners are, in pixels. 0 gives square corners.</description>
+    </key>
+
+    <key name="dock-icon-size" type="i">
+      <default>46</default>
+      <range min="24" max="68"/>
+      <summary>Dock icon size</summary>
+      <description>Height of the dock's app icons, in pixels. The dock sizes itself around them.</description>
+    </key>
+
   </schema>
 </schemalist>

@@ -13,6 +13,7 @@ import * as BoxPointer from 'resource:///org/gnome/shell/ui/boxpointer.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 import {BlurManager, OverviewBackdrop, loadRoundedBlur, shouldSkipGlobe} from './lib/blur.js';
+import {Dock, DOCK_NAME, OverviewDash} from './lib/dock.js';
 import {DynamicStylesheet, rgba} from './lib/dynamicStyle.js';
 import {GlobeEffect, EFFECT_NAME} from './lib/globeEffect.js';
 import {THEMES, THEME_ORDER} from './lib/themes.js';
@@ -42,6 +43,8 @@ export default class CybermythExtension extends Extension {
         this._uiGroupConn = null;
         this._globeOn = false;
         this._overviewBackdrop = null;
+        this._dock = null;
+        this._overviewDash = null;
         this._style = new DynamicStylesheet(this.uuid);
 
         this._config = {
@@ -66,6 +69,11 @@ export default class CybermythExtension extends Extension {
             'changed::hover-color',
             'changed::hover-opacity',
             'changed::panel-opacity',
+            'changed::dock-enabled',
+            'changed::dock-autohide-portrait',
+            'changed::dock-autohide-landscape',
+            'changed::dock-radius',
+            'changed::dock-icon-size',
             'changed::rotation-speed',
             'changed::fps',
         ].map(sig => this._settings.connect(sig, () => this._applySettings()));
@@ -88,8 +96,14 @@ export default class CybermythExtension extends Extension {
 
     disable() {
         this._stopTick();
+        this._dock?.destroy();
+        this._dock = null;
+        this._overviewDash?.destroy();
+        this._overviewDash = null;
         this._resetPanel();
         this._clearMenuBlur();
+        this._overviewBackdrop?.destroy();
+        this._overviewBackdrop = null;
         this._blur = null;
         this._style.destroy();
         this._style = null;
@@ -149,6 +163,7 @@ export default class CybermythExtension extends Extension {
         this._updatePanel();
         this._applyMenuBlur();
         this._applyOverviewBackdrop();
+        this._applyDock();
     }
 
     // Switching the globe off drops the effects and lets the shell paint the
@@ -330,9 +345,40 @@ export default class CybermythExtension extends Extension {
             this._settings.get_double('menu-opacity'));
         const hover = rgba(hex, this._settings.get_string('hover-color'),
             this._settings.get_double('hover-opacity'));
+        const dockRadius = this._settings.get_int('dock-radius');
 
         // Selectors are deliberately a notch more specific than the stock
         // theme's, so this sheet wins the cascade wherever both set a colour.
+        // Both dashes get the same treatment: ours on the desktop, and the
+        // shell's inside the overview.
+        const dashRoots = [`#${DOCK_NAME}`, '#overviewGroup'];
+        const dashSel = sel => dashRoots.map(r => `${r} ${sel}`).join(',\n');
+
+        // The stock theme paints a dash icon's background through thirty
+        // selectors, and several of them put a pseudo-class on .overview-icon
+        // itself as well as on its container. Those are more specific than a
+        // single-pseudo-class rule, so overriding only the obvious ones leaves
+        // stock's opaque grey winning on exactly those states — which is what
+        // shows up as a flicker over a light window. Mirror the whole matrix.
+        const DASH_ITEMS = ['show-apps', 'overview-tile', 'grid-search-result'];
+        const DASH_STATES = [
+            ':focus .overview-icon',
+            ':focus .overview-icon:hover',
+            ':hover .overview-icon',
+            ':active .overview-icon',
+            ':active .overview-icon:hover',
+            ':active .overview-icon:focus',
+            ':checked .overview-icon',
+            ':checked .overview-icon:hover',
+            ':checked .overview-icon:active',
+        ];
+        const dashIconsRest = dashSel(DASH_ITEMS
+            .map(k => `#dash .dash-item-container .${k} .overview-icon`)
+            .join(',\n'));
+        const dashStates = dashRoots.flatMap(r =>
+            DASH_ITEMS.flatMap(k => DASH_STATES.map(st =>
+                `${r} #dash .dash-item-container .${k}${st}`))).join(',\n');
+
         this._style.update(`
 .popup-menu .popup-menu-content,
 .candidate-popup-boxpointer .candidate-popup-content,
@@ -390,21 +436,75 @@ export default class CybermythExtension extends Extension {
 #overviewGroup .app-folder-dialog .grid-search-result:focus {
     background-color: ${hover};
 }
+
+/* Both dashes: the one on the desktop and the shell's own in the overview.
+ * Stock paints the dash surface on .dash-background (#38383b, 28px radius), so
+ * that is the element the tint, the radius and the blur all go on. */
+${dashSel('#dash .dash-background')} {
+    background-color: ${menu};
+    border-radius: ${dockRadius}px;
+    box-shadow: none;
+}
+
+/* Stock gives every dash icon its own flat #38383b tile, which is invisible
+ * against the stock dash and reads as a row of grey squares against a
+ * translucent one. Clear it at rest and use the icon highlight colour for the
+ * states the user can see. */
+${dashIconsRest} {
+    background-color: transparent;
+}
+
+${dashStates} {
+    background-color: ${hover};
+}
+
+/* The quick-settings submenu (clicking Power, Wi-Fi and friends) is a panel of
+ * its own that stock fills with an opaque #47474c. Over a translucent menu that
+ * reads as a second tint stacked on the first. Clear it and let the one tint on
+ * the menu behind it show through. */
+.quick-toggle-menu,
+.popup-menu-content .quick-toggle-menu {
+    background-color: transparent;
+    box-shadow: none;
+}
 `);
     }
 
+    // The blurred wallpaper behind the overview is not the menu blur and does
+    // not follow its switch: turning menu blur off should leave the overview
+    // looking the way it does. Only the blur radius is shared.
     _applyOverviewBackdrop() {
-        if (!this._settings.get_boolean('menu-blur')) {
-            this._overviewBackdrop?.destroy();
-            this._overviewBackdrop = null;
-            return;
-        }
-
         if (this._overviewBackdrop) {
             this._overviewBackdrop.setParams(this._blurRadius, BLUR_BRIGHTNESS);
             return;
         }
         this._overviewBackdrop = new OverviewBackdrop(this._blurRadius, BLUR_BRIGHTNESS);
+    }
+
+    // The dock is a second Dash of our own on the desktop; the shell's dash
+    // stays untouched and keeps running the overview.
+    _applyDock() {
+        // The overview's dash is styled to match whether or not our own dock is
+        // on show, so its icon size and its trash item follow the same settings.
+        this._overviewDash ??= new OverviewDash(this.path);
+        this._overviewDash.setSize(this._settings.get_int('dock-icon-size'));
+
+        if (!this._settings.get_boolean('dock-enabled')) {
+            this._dock?.destroy();
+            this._dock = null;
+            return;
+        }
+
+        if (!this._dock) {
+            this._dock = new Dock(this.path);
+            this._dock.build();
+        }
+
+        this._dock.setParams({
+            autohidePortrait: this._settings.get_boolean('dock-autohide-portrait'),
+            autohideLandscape: this._settings.get_boolean('dock-autohide-landscape'),
+            iconSize: this._settings.get_int('dock-icon-size'),
+        });
     }
 
     _clearMenuBlur() {
@@ -413,8 +513,6 @@ export default class CybermythExtension extends Extension {
             this._uiGroupConn = null;
         }
         this._blur.removeAll();
-        this._overviewBackdrop?.destroy();
-        this._overviewBackdrop = null;
     }
 
     _occluded() {
@@ -434,6 +532,7 @@ export default class CybermythExtension extends Extension {
     _tick() {
         this._updatePanel();
         this._blur?.syncAll();
+        this._dock?.sync();
 
         if (!this._globeOn || this._occluded())
             return GLib.SOURCE_CONTINUE;
