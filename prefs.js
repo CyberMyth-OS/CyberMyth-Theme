@@ -77,8 +77,6 @@ export default class CybermythPrefs extends ExtensionPreferences {
         bgGroup.add(bgOpacityRow);
         bgGroup.add(globeOpacityRow);
 
-        // Everything here only matters while the globe is actually drawn. The
-        // colour is the exception: it also tints the top bar.
         for (const row of [themeRow, bgOpacityRow, globeOpacityRow])
             settings.bind('globe-enabled', row, 'sensitive', Gio.SettingsBindFlags.GET);
 
@@ -202,8 +200,6 @@ export default class CybermythPrefs extends ExtensionPreferences {
             if (v !== settings.get_int('menu-blur-radius'))
                 settings.set_int('menu-blur-radius', v);
         });
-        // Not tied to the menu-blur switch: the radius still drives the
-        // blurred wallpaper behind the overview, which stays either way.
         menus.add(radiusRow);
 
         const dock = new Adw.PreferencesGroup({

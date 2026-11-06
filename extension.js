@@ -19,19 +19,16 @@ import {GlobeEffect, EFFECT_NAME} from './lib/globeEffect.js';
 import {THEMES, THEME_ORDER} from './lib/themes.js';
 
 const REFERENCE_FPS = 30;
-// With the globe switched off nothing is being animated, but the top bar still
-// has to notice windows being maximized. Poll slowly enough to cost nothing.
 const IDLE_POLL_FPS = 5;
 const PANEL_STYLE_CLASS = 'cybermyth-transparent-panel';
 const BLUR_BRIGHTNESS = 1.0;
-// How far to look inside a uiGroup child for a nested BoxPointer.
 const BLUR_SEARCH_DEPTH = 3;
 
 export default class CybermythExtension extends Extension {
     async enable() {
         this._settings = this.getSettings();
         this._effects = new Set();
-        this._actorConns = new Map();
+        this._actorConns = new Set();
         this._maskContent = null;
         this._maskName = null;
         this._tickId = null;
@@ -56,7 +53,7 @@ export default class CybermythExtension extends Extension {
             colors: {...THEMES.globe.colors},
         };
 
-        this._settingsIds = [
+        const settingsSignals = [
             'changed::active-theme',
             'changed::globe-enabled',
             'changed::background-color',
@@ -76,7 +73,9 @@ export default class CybermythExtension extends Extension {
             'changed::dock-icon-size',
             'changed::rotation-speed',
             'changed::fps',
-        ].map(sig => this._settings.connect(sig, () => this._applySettings()));
+        ];
+        for (const signal of settingsSignals)
+            this._settings.connectObject(signal, () => this._applySettings(), this);
 
         const self = this;
         this._origCreate = Background.BackgroundManager.prototype._createBackgroundActor;
@@ -87,8 +86,6 @@ export default class CybermythExtension extends Extension {
             return actor;
         };
 
-        // Resolve the optional rounded-blur library before anything is drawn.
-        // The shell awaits enable(), so this costs one import and nothing else.
         await loadRoundedBlur();
 
         this._applySettings();
@@ -117,12 +114,7 @@ export default class CybermythExtension extends Extension {
         this._actorConns = null;
         this._effects = null;
 
-        if (this._settingsIds) {
-            for (const id of this._settingsIds)
-                this._settings.disconnect(id);
-            this._settingsIds = null;
-        }
-
+        this._settings.disconnectObject(this);
         this._settings = null;
         this._config = null;
         this._maskContent = null;
@@ -166,9 +158,6 @@ export default class CybermythExtension extends Extension {
         this._applyDock();
     }
 
-    // Switching the globe off drops the effects and lets the shell paint the
-    // plain wallpaper again. The top bar and the menus are styled separately
-    // and carry on regardless.
     _applyGlobe() {
         const on = this._settings.get_boolean('globe-enabled');
         if (on === this._globeOn)
@@ -184,12 +173,10 @@ export default class CybermythExtension extends Extension {
     }
 
     _detachGlobe() {
-        // Clear the flag first: rebuilding the backgrounds runs them back
-        // through our patched _createBackgroundActor, which must not re-attach.
         this._globeOn = false;
 
-        for (const [actor, id] of this._actorConns)
-            actor.disconnect(id);
+        for (const actor of this._actorConns)
+            actor.disconnectObject(this);
         this._actorConns.clear();
 
         for (const effect of this._effects)
@@ -229,11 +216,11 @@ export default class CybermythExtension extends Extension {
         actor.add_effect_with_name(EFFECT_NAME, effect);
         this._effects.add(effect);
 
-        const id = actor.connect('destroy', () => {
+        actor.connectObject('destroy', () => {
             this._effects.delete(effect);
             this._actorConns.delete(actor);
-        });
-        this._actorConns.set(actor, id);
+        }, this);
+        this._actorConns.add(actor);
     }
 
     _startTick() {
@@ -250,8 +237,6 @@ export default class CybermythExtension extends Extension {
         }
     }
 
-    // A maximized or fullscreen window on the primary monitor sits directly
-    // under the top bar, so the bar has to go back to being readable.
     _panelObscured() {
         const active = global.workspace_manager.get_active_workspace();
         const primary = Main.layoutManager.primaryIndex;
@@ -262,13 +247,10 @@ export default class CybermythExtension extends Extension {
                 w.window_type === Meta.WindowType.NORMAL &&
                 w.get_monitor() === primary &&
                 w.get_workspace() === active &&
-                (w.is_fullscreen() || w.get_maximized() === Meta.MaximizeFlags.BOTH);
+                (w.is_fullscreen() || w.is_maximized());
         });
     }
 
-    // Hand the top bar back to the shell's own theme in the overview and
-    // behind a maximized window; it already draws both of those states, and
-    // fades between them over 250ms.
     _updatePanel() {
         const style = Main.overview.visible || this._panelObscured()
             ? null
@@ -294,9 +276,6 @@ export default class CybermythExtension extends Extension {
         this._panelStyle = null;
     }
 
-    // Every menu in the shell is a BoxPointer parented into Main.uiGroup, so
-    // watching that one container catches menus belonging to other extensions
-    // too, and menus that are built long after we were enabled.
     _applyMenuBlur() {
         if (!this._settings.get_boolean('menu-blur')) {
             this._clearMenuBlur();
@@ -308,18 +287,16 @@ export default class CybermythExtension extends Extension {
             brightness: BLUR_BRIGHTNESS,
         });
 
-        this._uiGroupConn ??= Main.uiGroup.connect('child-added',
-            (_group, child) => this._blurTarget(child));
+        if (!this._uiGroupConn) {
+            Main.uiGroup.connectObject('child-added',
+                (_group, child) => this._blurTarget(child), this);
+            this._uiGroupConn = true;
+        }
 
         for (const child of Main.uiGroup.get_children())
             this._blurTarget(child);
     }
 
-    // Most menus are a BoxPointer parented straight into uiGroup, but not all:
-    // QuickSettingsMenu replaces its actor with a 0x0 St.Widget and nests the
-    // real BoxPointer inside it, so blurring the uiGroup child would blur
-    // nothing. Search a little way down for the BoxPointer that actually has
-    // the menu in it.
     _blurTarget(actor, depth = 0) {
         if (!actor)
             return;
@@ -336,9 +313,6 @@ export default class CybermythExtension extends Extension {
             this._blurTarget(child, depth + 1);
     }
 
-    // Everything the user can recolour lives here. It has to be real CSS
-    // rather than inline styles: :hover and friends are pseudo-classes, and
-    // St has no way to set those on an actor directly.
     _updateStyle() {
         const hex = h => this._hexToRgb(h);
         const menu = rgba(hex, this._settings.get_string('menu-color'),
@@ -347,19 +321,9 @@ export default class CybermythExtension extends Extension {
             this._settings.get_double('hover-opacity'));
         const dockRadius = this._settings.get_int('dock-radius');
 
-        // Selectors are deliberately a notch more specific than the stock
-        // theme's, so this sheet wins the cascade wherever both set a colour.
-        // Both dashes get the same treatment: ours on the desktop, and the
-        // shell's inside the overview.
         const dashRoots = [`#${DOCK_NAME}`, '#overviewGroup'];
         const dashSel = sel => dashRoots.map(r => `${r} ${sel}`).join(',\n');
 
-        // The stock theme paints a dash icon's background through thirty
-        // selectors, and several of them put a pseudo-class on .overview-icon
-        // itself as well as on its container. Those are more specific than a
-        // single-pseudo-class rule, so overriding only the obvious ones leaves
-        // stock's opaque grey winning on exactly those states — which is what
-        // shows up as a flicker over a light window. Mirror the whole matrix.
         const DASH_ITEMS = ['show-apps', 'overview-tile', 'grid-search-result'];
         const DASH_STATES = [
             ':focus .overview-icon',
@@ -379,6 +343,18 @@ export default class CybermythExtension extends Extension {
             DASH_ITEMS.flatMap(k => DASH_STATES.map(st =>
                 `${r} #dash .dash-item-container .${k}${st}`))).join(',\n');
 
+        const DASH_BUTTON_STATES = [
+            ':hover', ':focus', ':focus:hover',
+            ':active', ':active:hover', ':active:focus',
+            ':checked', ':checked:hover', ':checked:active',
+            ':selected', ':selected:hover', ':selected:active',
+            ':highlighted', ':highlighted:hover', ':highlighted:active',
+            ':insensitive',
+        ];
+        const dashButtons = dashRoots.flatMap(r =>
+            DASH_ITEMS.flatMap(k => DASH_BUTTON_STATES.map(st =>
+                `${r} #dash .dash-item-container .${k}${st}`))).join(',\n');
+
         this._style.update(`
 .popup-menu .popup-menu-content,
 .candidate-popup-boxpointer .candidate-popup-content,
@@ -386,10 +362,6 @@ export default class CybermythExtension extends Extension {
     background-color: ${menu};
 }
 
-/* Surfaces the stock theme fills with a flat grey at rest: the folder tiles in
- * the app grid, and the search result rows. The :focus states matter as much as
- * :hover here — the shell focuses the first search result automatically, and
- * the stock theme paints that one with an accent-tinted background. */
 #overviewGroup .app-folder,
 #overviewGroup .search-section-content,
 #overviewGroup .list-search-result,
@@ -437,19 +409,12 @@ export default class CybermythExtension extends Extension {
     background-color: ${hover};
 }
 
-/* Both dashes: the one on the desktop and the shell's own in the overview.
- * Stock paints the dash surface on .dash-background (#38383b, 28px radius), so
- * that is the element the tint, the radius and the blur all go on. */
 ${dashSel('#dash .dash-background')} {
     background-color: ${menu};
     border-radius: ${dockRadius}px;
     box-shadow: none;
 }
 
-/* Stock gives every dash icon its own flat #38383b tile, which is invisible
- * against the stock dash and reads as a row of grey squares against a
- * translucent one. Clear it at rest and use the icon highlight colour for the
- * states the user can see. */
 ${dashIconsRest} {
     background-color: transparent;
 }
@@ -458,10 +423,11 @@ ${dashStates} {
     background-color: ${hover};
 }
 
-/* The quick-settings submenu (clicking Power, Wi-Fi and friends) is a panel of
- * its own that stock fills with an opaque #47474c. Over a translucent menu that
- * reads as a second tint stacked on the first. Clear it and let the one tint on
- * the menu behind it show through. */
+${dashButtons} {
+    background-color: transparent;
+    box-shadow: none !important;
+}
+
 .quick-toggle-menu,
 .popup-menu-content .quick-toggle-menu {
     background-color: transparent;
@@ -470,9 +436,6 @@ ${dashStates} {
 `);
     }
 
-    // The blurred wallpaper behind the overview is not the menu blur and does
-    // not follow its switch: turning menu blur off should leave the overview
-    // looking the way it does. Only the blur radius is shared.
     _applyOverviewBackdrop() {
         if (this._overviewBackdrop) {
             this._overviewBackdrop.setParams(this._blurRadius, BLUR_BRIGHTNESS);
@@ -481,11 +444,7 @@ ${dashStates} {
         this._overviewBackdrop = new OverviewBackdrop(this._blurRadius, BLUR_BRIGHTNESS);
     }
 
-    // The dock is a second Dash of our own on the desktop; the shell's dash
-    // stays untouched and keeps running the overview.
     _applyDock() {
-        // The overview's dash is styled to match whether or not our own dock is
-        // on show, so its icon size and its trash item follow the same settings.
         this._overviewDash ??= new OverviewDash(this.path);
         this._overviewDash.setSize(this._settings.get_int('dock-icon-size'));
 
@@ -509,8 +468,8 @@ ${dashStates} {
 
     _clearMenuBlur() {
         if (this._uiGroupConn) {
-            Main.uiGroup.disconnect(this._uiGroupConn);
-            this._uiGroupConn = null;
+            Main.uiGroup.disconnectObject(this);
+            this._uiGroupConn = false;
         }
         this._blur.removeAll();
     }
@@ -525,7 +484,7 @@ ${dashStates} {
             const w = a.meta_window;
             return !w.minimized &&
                 w.get_workspace() === active &&
-                (w.is_fullscreen() || w.get_maximized() === Meta.MaximizeFlags.BOTH);
+                (w.is_fullscreen() || w.is_maximized());
         });
     }
 
