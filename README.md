@@ -4,7 +4,7 @@ A GNOME Shell extension that renders a slowly rotating globe on the desktop back
 
 The globe is drawn directly onto the shell's own background, so there is no extra window and nothing stacked on top. Leave it as a solid dark scene, or lower the background opacity until the globe floats over your wallpaper.
 
-Part of the [CyberMyth OS](https://github.com/CyberMyth-OS) desktop.
+Part of the [CyberMyth OS](https://cybermyth.dev) desktop.
 
 ## Requirements
 
